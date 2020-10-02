@@ -1,14 +1,14 @@
-use std::rc::Rc;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
-use cursive::Cursive;
-use cursive::event::{Key, EventResult};
+use cursive::event::{EventResult, Key};
 use cursive::traits::*;
-use cursive::views::{SelectView, OnEventView, Dialog, LinearLayout, TextView, DummyView};
+use cursive::views::{Dialog, DummyView, LinearLayout, OnEventView, SelectView, TextView};
+use cursive::Cursive;
 use either::Either;
 use itertools::Itertools;
 
-use config::{Config, ConfigItem, ConfigDefinition, ConfigGroup};
+use config::{Config, ConfigDefinition, ConfigGroup, ConfigItem};
 use execution::Execution;
 
 struct State {
@@ -30,8 +30,7 @@ impl State {
     }
 }
 
-pub fn run(config  : Config,
-           dry_run : bool) {
+pub fn run(config: Config, dry_run: bool) {
     let state = Rc::new(State {
         config,
         path: RefCell::new(Vec::new()),
@@ -40,14 +39,10 @@ pub fn run(config  : Config,
 
     let mut siv = Cursive::new();
 
-    render_current_group(&mut siv,
-                         state.clone(),
-                         &state.config.root,
-                         None,
-                         dry_run);
+    render_current_group(&mut siv, state.clone(), &state.config.root, None, dry_run);
 
     siv.run();
-    drop(siv);  // to dispose of backend messing with the terminal
+    drop(siv); // to dispose of backend messing with the terminal
 
     if state.execute.get() {
         if let Either::Left(definition) = state.current_item() {
@@ -61,22 +56,21 @@ pub fn run(config  : Config,
     }
 }
 
-fn render_current_group(s             : &mut Cursive,
-                        state         : Rc<State>,
-                        group         : &ConfigGroup,
-                        last_selected : Option<String>,
-                        dry_run       : bool) {
+fn render_current_group(
+    s: &mut Cursive,
+    state: Rc<State>,
+    group: &ConfigGroup,
+    last_selected: Option<String>,
+    dry_run: bool,
+) {
     s.pop_layer();
 
-    let mut select = SelectView::<String>::new()
-        .on_submit({
-            let state = state.clone();
-            move |s: &mut Cursive, name: &String|
-            handle_selection_submit(s,
-                                    state.clone(),
-                                    name,
-                                    dry_run)
-        });
+    let mut select = SelectView::<String>::new().on_submit({
+        let state = state.clone();
+        move |s: &mut Cursive, name: &String| {
+            handle_selection_submit(s, state.clone(), name, dry_run)
+        }
+    });
 
     let mut items = Vec::new();
 
@@ -131,7 +125,7 @@ fn render_current_group(s             : &mut Cursive,
     s.add_layer(
         Dialog::around(layout)
             .title("Profiles")
-            .button("Quit", |s| s.quit())
+            .button("Quit", |s| s.quit()),
     );
 
     // up one level
@@ -141,26 +135,31 @@ fn render_current_group(s             : &mut Cursive,
     });
 }
 
-fn render_current_definition(s          : &mut Cursive,
-                             state      : Rc<State>,
-                             definition : &ConfigDefinition,
-                             dry_run    : bool) {
+fn render_current_definition(
+    s: &mut Cursive,
+    state: Rc<State>,
+    definition: &ConfigDefinition,
+    dry_run: bool,
+) {
     s.pop_layer();
 
     let layout = LinearLayout::vertical()
-        .child(TextView::new(
-            format!("Will {} the following command:",
-                    if dry_run { "print" } else { "execute" })))
+        .child(TextView::new(format!(
+            "Will {} the following command:",
+            if dry_run { "print" } else { "execute" }
+        )))
         .child(DummyView)
-        .child(TextView::new(Execution::from(definition.clone()).command_line()))
-        .child(DummyView)
         .child(TextView::new(
-            format!("Press Enter to {}, Esc to go back",
-                    if dry_run { "print" } else { "run" })));
+            Execution::from(definition.clone()).command_line(),
+        ))
+        .child(DummyView)
+        .child(TextView::new(format!(
+            "Press Enter to {}, Esc to go back",
+            if dry_run { "print" } else { "run" }
+        )));
 
     s.add_layer(
-        Dialog::around(layout)
-            .title(format!("Profile {}", state.path.borrow().iter().join(".")))
+        Dialog::around(layout).title(format!("Profile {}", state.path.borrow().iter().join("."))),
     );
 
     s.add_global_callback(Key::Enter, {
@@ -178,10 +177,7 @@ fn render_current_definition(s          : &mut Cursive,
     });
 }
 
-fn handle_selection_submit(s       : &mut Cursive,
-                           state   : Rc<State>,
-                           name    : &str,
-                           dry_run : bool) {
+fn handle_selection_submit(s: &mut Cursive, state: Rc<State>, name: &str, dry_run: bool) {
     let last_selected = {
         let mut path = state.path.borrow_mut();
         if name.is_empty() {
@@ -198,19 +194,19 @@ fn handle_selection_submit(s       : &mut Cursive,
     };
 
     match state.current_item() {
-        Either::Left(definition) => render_current_definition(s,
-                                                              state.clone(),
-                                                              definition,
-                                                              dry_run),
-        Either::Right(group)     => render_current_group(s,
-                                                         state.clone(),
-                                                         group,
-                                                         last_selected,
-                                                         dry_run),
+        Either::Left(definition) => {
+            render_current_definition(s, state.clone(), definition, dry_run)
+        }
+        Either::Right(group) => {
+            render_current_group(s, state.clone(), group, last_selected, dry_run)
+        }
     }
 }
 
-fn format_path<I: IntoIterator>(path: I) -> String where I::Item: AsRef<str> {
+fn format_path<I: IntoIterator>(path: I) -> String
+where
+    I::Item: AsRef<str>,
+{
     let mut result = String::new();
 
     for part in path {

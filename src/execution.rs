@@ -1,9 +1,10 @@
 use std::fmt;
 
-use itertools::Itertools;
 use exec;
+use itertools::Itertools;
+use std::iter::Iterator;
 
-use config::{ConfigDefinition, Tunnel, State};
+use config::{ConfigDefinition, State, Tunnel};
 
 pub struct Execution {
     definition: ConfigDefinition,
@@ -13,7 +14,10 @@ pub struct Execution {
 impl From<ConfigDefinition> for Execution {
     fn from(definition: ConfigDefinition) -> Self {
         let definition = normalize_definition(definition);
-        Execution { definition, command_parts: Vec::new(), }
+        Execution {
+            definition,
+            command_parts: Vec::new(),
+        }
     }
 }
 
@@ -68,7 +72,8 @@ impl Execution {
             self.prepare();
         }
 
-        self.command_parts.iter()
+        self.command_parts
+            .iter()
             .map(|part| part.iter().join(" "))
             .join(" -t \\\n  ")
     }
@@ -77,11 +82,12 @@ impl Execution {
         if self.command_parts.is_empty() {
             self.prepare();
         }
-
-        let args: Vec<_> = self.command_parts.into_iter()
-            .intersperse(vec!["-t".into()])
-            .flatten()
-            .collect();
+        let args: Vec<_> = std::iter::Iterator::flatten(
+            self.command_parts
+                .into_iter()
+                .intersperse(vec!["-t".into()]),
+        )
+        .collect();
 
         println!("{}", args.join(" "));
 
@@ -145,7 +151,6 @@ fn normalize_definition(mut definition: ConfigDefinition) -> ConfigDefinition {
 
             // Save the tunnel configuration for further use
             last_tunnel = Some(tunnel.clone());
-
         } else {
             // Remove the last tunnel if it is not configured/disabled in this jump
             last_tunnel = None;
@@ -159,7 +164,12 @@ struct SshArg<'a>(&'a Tunnel);
 
 impl<'a> fmt::Display for SshArg<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let Tunnel { ref local_host, local_port, ref remote_host, remote_port } = *self.0;
+        let Tunnel {
+            ref local_host,
+            local_port,
+            ref remote_host,
+            remote_port,
+        } = *self.0;
 
         if let Some(host) = local_host.as_ref() {
             write!(f, "{}:", host)?;

@@ -1,11 +1,11 @@
-use std::fs::File;
-use std::path::Path;
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::io::{self, Read};
+use std::path::Path;
 
 use toml;
+use toml::value::{Array, Table};
 use toml::Value;
-use toml::value::{Table, Array};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum State<T> {
@@ -31,7 +31,7 @@ pub struct Tunnel {
     pub local_port: Option<u16>,
     pub local_host: Option<String>,
     pub remote_port: Option<u16>,
-    pub remote_host: Option<String>
+    pub remote_host: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -83,37 +83,46 @@ pub fn load(path: &Path) -> Result<Config> {
 fn load_from_string(s: &str) -> Result<Config> {
     let table = match s.parse::<Value>()? {
         Value::Table(table) => table,
-        _ => unreachable!(),  // cannot happen
+        _ => unreachable!(), // cannot happen
     };
     let root = read_config_group("".into(), table)?;
 
-    Ok(Config { root, })
+    Ok(Config { root })
 }
 
 fn read_config_group(path: String, table: Table) -> Result<ConfigGroup> {
     let mut definitions = BTreeMap::new();
 
     fn mkpath(first: &str, second: &str) -> String {
-        if first.is_empty() { second.into() }
-        else { first.to_owned() + "." + second }
+        if first.is_empty() {
+            second.into()
+        } else {
+            first.to_owned() + "." + second
+        }
     }
 
     for (k, v) in table {
         let item = match v {
-            Value::Table(table) =>
-                ConfigItem::Subgroup(read_config_group(mkpath(&path, &k), table)?),
-            Value::Array(array) =>
-                ConfigItem::Definition(read_config_definition(mkpath(&path, &k), array)?),
-            other =>
+            Value::Table(table) => {
+                ConfigItem::Subgroup(read_config_group(mkpath(&path, &k), table)?)
+            }
+            Value::Array(array) => {
+                ConfigItem::Definition(read_config_definition(mkpath(&path, &k), array)?)
+            }
+            other => {
                 return Err(format!(
                     "unexpected config item {} in {}, expected table or array, got {}",
-                    k, path, other.type_str()
-                ).into()),
+                    k,
+                    path,
+                    other.type_str()
+                )
+                .into())
+            }
         };
         definitions.insert(k, item);
     }
 
-    Ok(ConfigGroup { definitions, })
+    Ok(ConfigGroup { definitions })
 }
 
 fn read_config_definition(path: String, array: Array) -> Result<ConfigDefinition> {
@@ -122,14 +131,18 @@ fn read_config_definition(path: String, array: Array) -> Result<ConfigDefinition
         let item = match item {
             Value::Table(table) => SingleJumpContext::new(&path, idx).read_from_table(table)?,
             Value::String(string) => SingleJumpContext::new(&path, idx).read_from_string(string)?,
-            other => return Err(format!(
-                "unexpected jump configuration in {}, expected table or string, got {}",
-                path, other.type_str()
-            ).into()),
+            other => {
+                return Err(format!(
+                    "unexpected jump configuration in {}, expected table or string, got {}",
+                    path,
+                    other.type_str()
+                )
+                .into())
+            }
         };
         chain.push(item);
     }
-    Ok(ConfigDefinition { chain, })
+    Ok(ConfigDefinition { chain })
 }
 
 struct SingleJumpContext<'a> {
@@ -139,7 +152,10 @@ struct SingleJumpContext<'a> {
 
 impl<'a> SingleJumpContext<'a> {
     fn new(path: &'a str, idx: usize) -> SingleJumpContext<'a> {
-        SingleJumpContext { path: path.into(), idx, }
+        SingleJumpContext {
+            path: path.into(),
+            idx,
+        }
     }
 
     fn err<T, S: AsRef<str>>(&self, msg: S) -> Result<T> {
@@ -147,42 +163,74 @@ impl<'a> SingleJumpContext<'a> {
     }
 
     fn read_from_string(&self, s: String) -> Result<SingleJump> {
-        let table = Some(("host".to_owned(), Value::String(s))).into_iter().collect();
+        let table = Some(("host".to_owned(), Value::String(s)))
+            .into_iter()
+            .collect();
         self.read_from_table(table)
     }
 
     fn read_from_table(&self, mut table: Table) -> Result<SingleJump> {
         let host = match table.remove("host") {
             Some(Value::String(host)) => host,
-            Some(other) => return self.err(format!("host is invalid: expected string, got {}", other.type_str())),
+            Some(other) => {
+                return self.err(format!(
+                    "host is invalid: expected string, got {}",
+                    other.type_str()
+                ))
+            }
             None => return self.err("host is missing"),
         };
 
-        let HostInfo { host, port, user, key, } = self.parse_host(&host)?;
+        let HostInfo {
+            host,
+            port,
+            user,
+            key,
+        } = self.parse_host(&host)?;
 
         let host = host.into();
 
         let port = match table.remove("port") {
-            Some(Value::Integer(i)) if i >= u16::min_value() as i64 && i <= u16::max_value() as i64 => Some(i as u16),
+            Some(Value::Integer(i))
+                if i >= u16::min_value() as i64 && i <= u16::max_value() as i64 =>
+            {
+                Some(i as u16)
+            }
             None => port,
-            Some(Value::Integer(i)) =>
-                return self.err(format!("port is invalid: expected number from 0 to 65536, got {}", i)),
-            Some(other) =>
-                return self.err(format!("port is invalid: expected number from 0 to 65536, got {}", other.type_str()))
+            Some(Value::Integer(i)) => {
+                return self.err(format!(
+                    "port is invalid: expected number from 0 to 65536, got {}",
+                    i
+                ))
+            }
+            Some(other) => {
+                return self.err(format!(
+                    "port is invalid: expected number from 0 to 65536, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let user = match table.remove("user") {
             Some(Value::String(u)) => Some(u),
             None => user.map(Into::into),
-            Some(other) =>
-                return self.err(format!("user is invalid: expected string, got {}", other.type_str()))
+            Some(other) => {
+                return self.err(format!(
+                    "user is invalid: expected string, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let key = match table.remove("key") {
             Some(Value::String(k)) => Some(k),
             None => key.map(Into::into),
-            Some(other) =>
-                return self.err(format!("key is invalid: expected string, got {}", other.type_str()))
+            Some(other) => {
+                return self.err(format!(
+                    "key is invalid: expected string, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let tunnel = match table.remove("tunnel") {
@@ -191,29 +239,69 @@ impl<'a> SingleJumpContext<'a> {
             Some(Value::Integer(integer)) => State::Enabled(self.tunnel_from_integer(integer)?),
             Some(Value::Boolean(false)) => State::Disabled,
             None => State::Unset,
-            Some(other) =>
-                return self.err(format!("tunnel is invalid: expected string, integer, table or false, got {}", other.type_str()))
+            Some(other) => {
+                return self.err(format!(
+                    "tunnel is invalid: expected string, integer, table or false, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let verbose = match table.remove("verbose") {
             Some(Value::Boolean(v)) => v,
             None => false,
-            Some(other) => return self.err(format!("verbose is invalid: expected boolean, got {}", other.type_str())),
+            Some(other) => {
+                return self.err(format!(
+                    "verbose is invalid: expected boolean, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let agent_passthrough = match table.remove("agent_passthrough") {
-            Some(Value::Boolean(a)) => if a { State::Enabled(()) } else { State::Disabled },
+            Some(Value::Boolean(a)) => {
+                if a {
+                    State::Enabled(())
+                } else {
+                    State::Disabled
+                }
+            }
             None => State::Unset,
-            Some(other) => return self.err(format!("agent_passthrough is invalid: expected boolean, got {}", other.type_str())),
+            Some(other) => {
+                return self.err(format!(
+                    "agent_passthrough is invalid: expected boolean, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
         let no_command = match table.remove("no_command") {
-            Some(Value::Boolean(n)) => if n { State::Enabled(()) } else { State::Disabled },
+            Some(Value::Boolean(n)) => {
+                if n {
+                    State::Enabled(())
+                } else {
+                    State::Disabled
+                }
+            }
             None => State::Unset,
-            Some(other) => return self.err(format!("no_command is invalid: expected boolean, got {}", other.type_str())),
+            Some(other) => {
+                return self.err(format!(
+                    "no_command is invalid: expected boolean, got {}",
+                    other.type_str()
+                ))
+            }
         };
 
-        Ok(SingleJump { host, port, user, key, tunnel, verbose, agent_passthrough, no_command, })
+        Ok(SingleJump {
+            host,
+            port,
+            user,
+            key,
+            tunnel,
+            verbose,
+            agent_passthrough,
+            no_command,
+        })
     }
 
     fn tunnel_from_string(&self, s: String) -> Result<Tunnel> {
@@ -237,11 +325,13 @@ impl<'a> SingleJumpContext<'a> {
             let (host, port) = (parts.next().unwrap(), parts.next().unwrap());
 
             let port = if port.trim().is_empty() {
-               None
+                None
             } else {
                 match port.parse() {
                     Ok(p) => Some(p),
-                    Err(e) => return self.err(format!("tunnel is invalid: port is invalid: {}", e)),
+                    Err(e) => {
+                        return self.err(format!("tunnel is invalid: port is invalid: {}", e))
+                    }
                 }
             };
 
@@ -261,20 +351,28 @@ impl<'a> SingleJumpContext<'a> {
             return self.err("tunnel is invalid: either local or remote port should be configured");
         }
 
-        Ok(Tunnel { local_host, local_port, remote_host, remote_port, })
+        Ok(Tunnel {
+            local_host,
+            local_port,
+            remote_host,
+            remote_port,
+        })
     }
 
     fn tunnel_from_integer(&self, i: i64) -> Result<Tunnel> {
         const MIN: i64 = ::std::u16::MIN as i64;
         const MAX: i64 = ::std::u16::MAX as i64;
         match i {
-            MIN...MAX => Ok(Tunnel {
+            MIN..=MAX => Ok(Tunnel {
                 local_host: None,
                 local_port: Some(i as u16),
                 remote_host: None,
                 remote_port: None,
             }),
-            _ => self.err(format!("tunnel is invalid: port number is out of range: {}", i)),
+            _ => self.err(format!(
+                "tunnel is invalid: port number is out of range: {}",
+                i
+            )),
         }
     }
 
@@ -289,29 +387,37 @@ impl<'a> SingleJumpContext<'a> {
         if host.chars().filter(|c| *c == ':').count() > 2 {
             return self.err("host is invalid: expected [user@]host[:[port][:key]]");
         }
-        
+
         let mut parts = host.split(':');
         let (host, port, user, key) = match (parts.next().unwrap(), parts.next(), parts.next()) {
-            (host, None, None) => {  // just host
+            (host, None, None) => {
+                // just host
                 let (host, user) = parse_user_and_host(host);
                 (host, None, user, None)
-            },
-            (host, Some(port), key) => {  // host and port
+            }
+            (host, Some(port), key) => {
+                // host and port
                 let (host, user) = parse_user_and_host(host);
-                let port = if port.trim().is_empty() { None } else {
+                let port = if port.trim().is_empty() {
+                    None
+                } else {
                     match port.parse::<u16>() {
                         Ok(port) => Some(port),
                         Err(e) => return self.err(format!("port is invalid: {}", e)),
                     }
                 };
                 (host, port, user, key)
-            },
+            }
             (_, None, Some(_)) => unreachable!(),
         };
 
-        Ok(HostInfo { host, port, user, key, })
+        Ok(HostInfo {
+            host,
+            port,
+            user,
+            key,
+        })
     }
-
 }
 
 struct HostInfo<'a> {
@@ -404,18 +510,16 @@ whatever3 = [
         assert_eq!(
             root.remove("be_3").unwrap(),
             ConfigItem::Definition(ConfigDefinition {
-                chain: vec![
-                    SingleJump {
-                        host: "be-3.example.com".into(),
-                        port: 2244,
-                        user: Some("user".into()),
-                        key: Some("~/.ssh/be.pem".into()),
-                        tunnel: None,
-                        verbose: false,
-                        agent_passthrough: false,
-                        no_command: false,
-                    }
-                ]
+                chain: vec![SingleJump {
+                    host: "be-3.example.com".into(),
+                    port: 2244,
+                    user: Some("user".into()),
+                    key: Some("~/.ssh/be.pem".into()),
+                    tunnel: None,
+                    verbose: false,
+                    agent_passthrough: false,
+                    no_command: false,
+                }]
             })
         );
 
@@ -423,18 +527,16 @@ whatever3 = [
         assert_eq!(
             root.remove("be_4").unwrap(),
             ConfigItem::Definition(ConfigDefinition {
-                chain: vec![
-                    SingleJump {
-                        host: "be-3.example.com".into(),
-                        port: 1234,
-                        user: None,
-                        key: Some("/bla/bla.pem".into()),
-                        tunnel: None,
-                        verbose: false,
-                        agent_passthrough: false,
-                        no_command: false,
-                    }
-                ]
+                chain: vec![SingleJump {
+                    host: "be-3.example.com".into(),
+                    port: 1234,
+                    user: None,
+                    key: Some("/bla/bla.pem".into()),
+                    tunnel: None,
+                    verbose: false,
+                    agent_passthrough: false,
+                    no_command: false,
+                }]
             })
         );
 
@@ -484,6 +586,5 @@ whatever3 = [
                 ]
             })
         );
-
     }
 }

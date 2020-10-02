@@ -1,25 +1,28 @@
-#[macro_use] extern crate error_chain;
-#[macro_use] extern crate serde_derive;
-#[macro_use(crate_version, crate_authors)] extern crate clap;
-extern crate toml;
-extern crate serde;
-extern crate shellexpand;
-extern crate exec;
+#[macro_use]
+extern crate error_chain;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use(crate_version, crate_authors)]
+extern crate clap;
 extern crate cursive;
 extern crate either;
+extern crate exec;
 extern crate itertools;
+extern crate serde;
+extern crate shellexpand;
+extern crate toml;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use clap::{App, Arg, AppSettings};
+use clap::{App, AppSettings, Arg};
 
 use config::ConfigItem;
 use execution::Execution;
 
 mod config;
-mod ui;
 mod execution;
+mod ui;
 
 fn main() {
     let matches = App::new("sshc")
@@ -29,11 +32,11 @@ fn main() {
         .setting(AppSettings::ColoredHelp)
         .arg(
             Arg::from_usage("-c, --config=[FILE] 'Path to the configuration file'")
-                .default_value("~/.config/sshc/config.toml")
+                .default_value("~/.config/sshc/config.toml"),
         )
         .args_from_usage(
             "-p, --profile=[PROFILE] 'Run the specified profile immediately'
-             -d, --dry-run 'Just print the command'"
+             -d, --dry-run 'Just print the command'",
         )
         .get_matches();
 
@@ -43,7 +46,11 @@ fn main() {
     let config = match config::load(&config_path) {
         Ok(config) => config,
         Err(e) => {
-            println!("Failed to load configuration from {}: {}", config_path.display(), e);
+            println!(
+                "Failed to load configuration from {}: {}",
+                config_path.display(),
+                e
+            );
             std::process::exit(1)
         }
     };
@@ -57,18 +64,20 @@ fn main() {
         let mut definition = None;
         for (i, part) in parts.iter().cloned().enumerate() {
             match group.definitions.remove(part) {
-                Some(ConfigItem::Definition(d)) =>
+                Some(ConfigItem::Definition(d)) => {
                     if i == parts.len() - 1 {
                         definition = Some(d);
                     } else {
                         break;
-                    },
-                Some(ConfigItem::Subgroup(g)) =>
+                    }
+                }
+                Some(ConfigItem::Subgroup(g)) => {
                     if i < parts.len() - 1 {
                         group = g;
                     } else {
                         break;
-                    },
+                    }
+                }
                 _ => {}
             }
         }
@@ -80,12 +89,10 @@ fn main() {
             } else {
                 e.run();
             }
-
         } else {
             eprintln!("Invalid profile name: {}", profile);
             std::process::exit(1);
         }
-
     } else {
         ui::run(config, dry_run);
     }
@@ -100,4 +107,6 @@ pub fn str_to_path(s: &str) -> Cow<Path> {
 }
 
 #[inline]
-pub fn string_to_path(s: &String) -> Cow<Path> { str_to_path(s) }
+pub fn string_to_path(s: &String) -> Cow<Path> {
+    str_to_path(s)
+}
